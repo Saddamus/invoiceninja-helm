@@ -1,0 +1,137 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "invoiceninja.fullname" . }}
+  labels:
+    {{- include "invoiceninja.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "invoiceninja.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "invoiceninja.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "invoiceninja.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      initContainers:
+      - name: {{ .Chart.Name }}-volume-mount-hack
+        image: busybox
+        command: ["sh", "-c", "chown -R 1500:82 /var/www/app/public /var/www/app/storage"]
+        volumeMounts:
+        - name: invoiceninja-shared
+          mountPath: /var/www/app/public
+        - name: invoiceninja-storage
+          mountPath: /var/www/app/storage
+          subPath: storage
+        - name: invoiceninja-storage
+          mountPath: /var/www/app/public/storage
+          subPath: public-storage
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: backend
+              containerPort: 9000
+              protocol: TCP
+#          livenessProbe:
+#            httpGet:
+#              path: /
+#              port: 9000
+#          readinessProbe:
+#            httpGet:
+#              path: /
+#              port: 9000
+          envFrom:
+          - configMapRef:
+              name: {{ template "invoiceninja.fullname" . }}-env
+          volumeMounts:
+            - name: invoiceninja-shared
+              mountPath: /var/www/app/public
+            - name: invoiceninja-storage
+              mountPath: /var/www/app/storage
+              subPath: storage
+            - name: invoiceninja-storage
+              mountPath: /var/www/app/public/storage
+              subPath: public-storage
+        - name: {{ .Chart.Name }}-cron
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          command: [ 'sh', '/usr/local/bin/cron.sh' ]
+          envFrom:
+          - configMapRef:
+              name: {{ template "invoiceninja.fullname" . }}-env
+          volumeMounts:
+            - name: invoiceninja-cron-config
+              mountPath: /usr/local/bin/cron.sh
+              subPath: cron.sh
+            - name: invoiceninja-shared
+              mountPath: /var/www/app/public
+            - name: invoiceninja-storage
+              mountPath: /var/www/app/storage
+              subPath: storage
+            - name: invoiceninja-storage
+              mountPath: /var/www/app/public/storage
+              subPath: public-storage
+        - name: {{ .Chart.Name }}-nginx
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: nginx:1
+          ports:
+          - name: http
+            containerPort: 80
+          volumeMounts:
+            - name: invoiceninja-shared
+              mountPath: /var/www/app/public
+            - name: invoiceninja-storage
+              mountPath: /var/www/app/storage
+              subPath: storage
+            - name: invoiceninja-storage
+              mountPath: /var/www/app/public/storage
+              subPath: public-storage
+            - name: invoiceninja-nginx-config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: invoiceninja-shared
+          emptyDir: {}
+        - name: invoiceninja-storage
+          persistentVolumeClaim:
+            claimName: {{ template "invoiceninja.fullname" . }}-data
+        - name: invoiceninja-cron-config
+          configMap:
+            name: {{ template "invoiceninja.fullname" . }}
+        - name: invoiceninja-nginx-config
+          configMap:
+            name: {{ template "invoiceninja.fullname" . }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
