@@ -1,3 +1,8 @@
+# This code is out of date. Please use https://github.com/invoiceninja/dockerfiles/tree/master/charts/invoiceninja
+
+
+
+
 # invoiceninja
 Quick and dirty helm chart for invoiceninja V5, inspired by spacepluk https://github.com/invoiceninja/dockerfiles/issues/94 - not finished.
 
